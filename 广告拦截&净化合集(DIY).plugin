@@ -3918,7 +3918,7 @@ http:\/\/.+\.gamersky.com/.+/lists/getListElements response-body-json-jq '.listE
 ^https?:\/\/.+\.(amemv|musical|snssdk|tiktokv)\.com\/(api|motor)\/ad\/ reject-200
 #^https?:\/\/.+\.snssdk\.com\/motor\/operation\/activity\/display\/config\/V2\/ reject-200
 ^https?:\/\/[\w-]+\.amemv\.com\/aweme\/v\d\/ad\/ reject
-^https?:\/\/[\w-]+\.snssdk\.com\/.+_ad\/ reject
+#^https?:\/\/[\w-]+\.snssdk\.com\/.+_ad\/ reject
 ^https?:\/\/.+\.amemv\.com\/.+app_log reject-img
 ^https?:\/\/.+\.amemv\.com\/.+report reject-img
 ^https?:\/\/.+\.amemv\.com\/.+stats reject-img
