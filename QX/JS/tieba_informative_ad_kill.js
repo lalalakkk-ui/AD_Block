@@ -14,9 +14,21 @@ if(resStatus !== 200) {
     const url = $request.url;
     const isQuanX = typeof $task !== "undefined";
     const binaryBody = isQuanX ? new Uint8Array($response.bodyBytes) : $response.body;
-    let body;
+let body;
 
-    if (url.includes("frs/page")) {
+// ===== 新增：直播推广 cmd=309732（loop）=====
+if (url.includes("/c/s/loop") && url.includes("cmd=309732") && url.includes("format=protobuf")) {
+    console.log("贴吧-loop309732(直播推广)");
+    // 你抓包里有：BDPLiveChannel / unidispatch/BDPLiveChannel
+    if (bytesBodyHasKeywords(binaryBody, ["BDPLiveChannel", "unidispatch/BDPLiveChannel"])) {
+        console.log("命中直播推广关键字 -> 返回空数据");
+        body = new Uint8Array(0);
+    } else {
+        console.log("未命中直播推广关键字 -> 不处理");
+        body = binaryBody;
+    }
+// ===== 原有逻辑从这里继续（注意这里是 else if）=====
+} else if (url.includes("frs/page")) {
         console.log('贴吧-FrsPage');
         const frsPageResIdlObj = FrsPageResIdl.fromBinary(binaryBody,{readUnknownField: true});
 
@@ -157,6 +169,22 @@ if(resStatus !== 200) {
         removeGoodsInfo(personalizedResIdlObj.data.bannerList?.app);
         personalizedResIdlObj.data.threadList = removeThread(personalizedResIdlObj.data.threadList,
             +argOptions.per_filter_video_thread);
+            // ===== 新增：推荐页 threadList 过滤“游戏推广/预约/测试招募”等 =====
+personalizedResIdlObj.data.threadList = filterListByMessageBinaryKeywords(
+    personalizedResIdlObj.data.threadList,
+    ThreadInfo,
+    ["官方预约", "终极测试", "测试招募", "招募", "点击报名", "报名", "RUST", "失控进化"],
+    "推荐页-游戏推广"
+);
+// ===== 新增：推荐页 bannerList 过滤“年终大赏/顶部横幅”(抓包有1080x440图) =====
+if (personalizedResIdlObj.data.bannerList?.app?.length) {
+    personalizedResIdlObj.data.bannerList.app = filterListByMessageBinaryKeywords(
+        personalizedResIdlObj.data.bannerList.app,
+        App,
+        ["wh%3D1080%2C440", "wh=1080,440", "游戏大赏", "年终游戏", "贴吧年终"],
+        "推荐页-顶部横幅"
+    );
+}
         if(personalizedResIdlObj.data.liveAnswer){
             console.log('去除推荐页上方的banner广告');
             personalizedResIdlObj.data.liveAnswer = null;
@@ -229,4 +257,55 @@ function removeThread(threadList, filterVideo) {
         console.log('无需处理threadList');
     }
     return newThreadList;
+}
+// =========================
+// 通用：对“protobuf message 的二进制序列化结果”做关键字匹配过滤
+// 适用：ThreadInfo / App 这种 protobuf-ts 的 MessageType
+// =========================
+function filterListByMessageBinaryKeywords(list, MsgType, keywords, tag) {
+    if (!list?.length) return list;
+
+    let removed = 0;
+    const out = list.filter(item => {
+        try {
+            const bin = MsgType.toBinary(item);
+            if (bytesBodyHasKeywords(bin, keywords)) {
+                removed++;
+                return false;
+            }
+        } catch (e) {
+            // 序列化失败就不动它
+        }
+        return true;
+    });
+
+    if (removed) console.log(`去除${tag}:${removed}`);
+    return out;
+}
+
+// =========================
+// 在 Uint8Array 里查 UTF-8 关键字（不依赖字段名）
+// =========================
+function bytesBodyHasKeywords(u8, keywords) {
+    if (!u8 || !u8.length || !keywords?.length) return false;
+
+    const enc = new TextEncoder();
+    for (const k of keywords) {
+        if (!k) continue;
+        const needle = enc.encode(String(k));
+        if (u8Includes(u8, needle)) return true;
+    }
+    return false;
+}
+
+function u8Includes(hay, needle) {
+    if (!hay || !needle || hay.length < needle.length) return false;
+    outer:
+    for (let i = 0; i <= hay.length - needle.length; i++) {
+        for (let j = 0; j < needle.length; j++) {
+            if (hay[i + j] !== needle[j]) continue outer;
+        }
+        return true;
+    }
+    return false;
 }
