@@ -26,23 +26,22 @@ if (
     // 兜底：body 为空时从 bodyBytes 解码
     if ((!html || typeof html !== "string") && isQuanX && $response.bodyBytes) {
         try {
-            // 有的包是 gzip，这里简单识别一下
             const bytes = new Uint8Array($response.bodyBytes);
-            if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
-                // QX 场景一般已经自动解压；若没解压，这里不强行处理，避免引入额外依赖
-                html = new TextDecoder("utf-8").decode(bytes);
-            } else {
-                html = new TextDecoder("utf-8").decode(bytes);
-            }
+            html = new TextDecoder("utf-8").decode(bytes);
         } catch (e) {
             console.log("HTML decode failed: " + e);
         }
     }
 
+    // ✅ 加在这里：确认 H5 分支命中 + body 是否拿到
+    console.log("H5 inject hit: " + url);
+    console.log("H5 body len: " + (html ? html.length : 0));
+
     html = injectInformativeTabAdKiller(html);
     $done({ body: html });
     return;
 }
+
 
     const binaryBody = isQuanX ? new Uint8Array($response.bodyBytes) : $response.body;
     let body;
@@ -383,4 +382,5 @@ function injectInformativeTabAdKiller(html) {
     }
     return html + injected;
 }
+
 
