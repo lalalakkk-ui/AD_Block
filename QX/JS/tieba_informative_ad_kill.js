@@ -36,6 +36,9 @@ if (
     // ✅ 加在这里：确认 H5 分支命中 + body 是否拿到
     console.log("H5 inject hit: " + url);
     console.log("H5 body len: " + (html ? html.length : 0));
+    console.log("H5 status: " + ($response.status || ""));
+    console.log("H5 content-type: " + (($response.headers && ($response.headers["Content-Type"] || $response.headers["content-type"])) || ""));
+    console.log("H5 head: " + (html ? html.slice(0, 120).replace(/\s+/g, " ") : "EMPTY"));
 
     html = injectInformativeTabAdKiller(html);
     $done({ body: html });
@@ -382,5 +385,6 @@ function injectInformativeTabAdKiller(html) {
     }
     return html + injected;
 }
+
 
 
