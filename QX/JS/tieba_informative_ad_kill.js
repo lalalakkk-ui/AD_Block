@@ -16,22 +16,33 @@ if(resStatus !== 200) {
 
     // ✅ 新增：贴吧“有料/推荐”H5 页（informativeTab）去除“精选热推/立即下载”卡片
     // 说明：该接口是 HTML，不是 protobuf；因此这里单独处理并提前 return
-    if (url.includes("/mo/q/hybrid-usergrow-base/informativeTab")) {
-        let html = $response.body;
+    // ✅ 贴吧首页 H5：informativeTab + mainPage/hybrid 都注入 DOM 去推广
+if (
+    url.includes("/mo/q/hybrid-usergrow-base/informativeTab") ||
+    url.includes("/mo/q/hybrid-main-forumtab/mainPage/hybrid")
+) {
+    let html = $response.body;
 
-        // 某些情况下 $response.body 为空，这里用 bodyBytes 兜底解码
-        if ((!html || typeof html !== "string") && isQuanX && $response.bodyBytes) {
-            try {
-                html = new TextDecoder("utf-8").decode($response.bodyBytes);
-            } catch (e) {
-                console.log("informativeTab HTML decode failed: " + e);
+    // 兜底：body 为空时从 bodyBytes 解码
+    if ((!html || typeof html !== "string") && isQuanX && $response.bodyBytes) {
+        try {
+            // 有的包是 gzip，这里简单识别一下
+            const bytes = new Uint8Array($response.bodyBytes);
+            if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
+                // QX 场景一般已经自动解压；若没解压，这里不强行处理，避免引入额外依赖
+                html = new TextDecoder("utf-8").decode(bytes);
+            } else {
+                html = new TextDecoder("utf-8").decode(bytes);
             }
+        } catch (e) {
+            console.log("HTML decode failed: " + e);
         }
-
-        html = injectInformativeTabAdKiller(html);
-        $done({ body: html });
-        return;
     }
+
+    html = injectInformativeTabAdKiller(html);
+    $done({ body: html });
+    return;
+}
 
     const binaryBody = isQuanX ? new Uint8Array($response.bodyBytes) : $response.body;
     let body;
@@ -251,6 +262,7 @@ function removeThread(threadList, filterVideo) {
     return newThreadList;
 }
 
+#新加功能
 function injectInformativeTabAdKiller(html) {
     if (!html || typeof html !== "string") return html;
 
@@ -263,34 +275,97 @@ function injectInformativeTabAdKiller(html) {
         "  function textOf(el){ try{return (el&&(el.innerText||el.textContent)||'').trim();}catch(e){return '';} }" +
         "  function closestContainer(el){" +
         "    if(!el) return null;" +
-        "    var sels=['li','article','section','div[class*=card]','div[class*=item]','div[class*=feed]'];" +
+        "    var sels=['li','article','section','div[class*=card]','div[class*=item]','div[class*=feed]','div'];" +
         "    for(var i=0;i<sels.length;i++){ var c=el.closest&&el.closest(sels[i]); if(c) return c; }" +
-        "    var p=el; for(var k=0;k<8 && p && p.parentElement;k++) p=p.parentElement; return p;" +
+        "    var p=el; for(var k=0;k<10 && p && p.parentElement;k++) p=p.parentElement; return p;" +
         "  }" +
+
+        // —— 规则：下载广告（你原本的逻辑）——
         "  function isDownloadAdContainer(c){" +
         "    var t=textOf(c); if(!t) return false;" +
         "    var hasAd = t.indexOf('广告')>-1;" +
         "    var hasDl = (t.indexOf('立即下载')>-1) || (t.indexOf('下载')>-1);" +
         "    return hasAd && hasDl;" +
         "  }" +
-        "  function killOnce(root){" +
-        "    root=root||document;" +
-        "    var nodes = Array.prototype.slice.call(root.querySelectorAll('a,button,div,span'));" +
+
+        // —— 规则：直播推广（截图里的“直播中”）——
+        "  function isLivePromoContainer(c){" +
+        "    var t=textOf(c); if(!t) return false;" +
+        "    return t.indexOf('直播中')>-1;" +
+        "  }" +
+
+        // —— 规则：游戏推广（截图里的“官方预约”）——
+        "  function isGamePromoContainer(c){" +
+        "    var t=textOf(c); if(!t) return false;" +
+        "    if(t.indexOf('官方预约')>-1) return true;" +
+        "    // 兜底：常见“招募/测试”式游戏推广文案（更激进，若担心误伤可删掉下面两行）" +
+        "    if(t.indexOf('测试')>-1 && t.indexOf('招募')>-1 && t.indexOf('游戏')>-1) return true;" +
+        "    return false;" +
+        "  }" +
+
+        // —— 规则：年终/游戏大赏 Banner（优先按文本命中）——
+        "  function isAwardsBannerByText(c){" +
+        "    var t=textOf(c); if(!t) return false;" +
+        "    return (t.indexOf('游戏大赏')>-1) || (t.indexOf('年终游戏')>-1) || (t.indexOf('贴吧年终')>-1);" +
+        "  }" +
+
+        "  function shouldRemoveContainer(c){" +
+        "    return isDownloadAdContainer(c) || isLivePromoContainer(c) || isGamePromoContainer(c) || isAwardsBannerByText(c);" +
+        "  }" +
+
+        "  function tryRemoveByAnchorText(root, texts){" +
+        "    var nodes = Array.prototype.slice.call(root.querySelectorAll('a,button,div,span'));"+
         "    for(var i=0;i<nodes.length;i++){" +
         "      var t=textOf(nodes[i]);" +
-        "      if(t==='立即下载' || t==='下载'){" +
-        "        var c=closestContainer(nodes[i]);" +
-        "        if(c && isDownloadAdContainer(c)) c.remove();" +
+        "      for(var j=0;j<texts.length;j++){" +
+        "        if(t===texts[j]){" +
+        "          var c=closestContainer(nodes[i]);" +
+        "          if(c && shouldRemoveContainer(c)) c.remove();" +
+        "        }" +
         "      }" +
         "    }" +
+        "  }" +
+
+        // —— Banner 纯图片时：按“顶部区域 + 关闭按钮 + img”结构删 —— 
+        "  function tryRemoveTopBannerByCloseBtn(root){" +
+        "    var closers = Array.prototype.slice.call(root.querySelectorAll('i,span,button,div'))" +
+        "      .filter(function(el){ var t=textOf(el); return t==='×' || t==='x' || t==='X' || t==='✕'; });" +
+        "    for(var i=0;i<closers.length;i++){" +
+        "      var c=closestContainer(closers[i]);" +
+        "      if(!c) continue;" +
+        "      // 必须含图片，且尽量靠近顶部（避免误杀普通卡片的关闭按钮）" +
+        "      var hasImg = !!c.querySelector && !!c.querySelector('img');" +
+        "      if(!hasImg) continue;" +
+        "      try{" +
+        "        var r = c.getBoundingClientRect && c.getBoundingClientRect();" +
+        "        if(r && r.top < 260) { c.remove(); }" +
+        "      }catch(e){}" +
+        "    }" +
+        "  }" +
+
+        "  function killOnce(root){" +
+        "    root=root||document;" +
+
+        "    // 1) 精准锚点：下载/直播/预约" +
+        "    tryRemoveByAnchorText(root, ['立即下载','下载','直播中','官方预约']);" +
+
+        "    // 2) 兜底：直接扫描“广告”标签（仍需同时满足 shouldRemove）" +
         "    var tags = Array.prototype.slice.call(root.querySelectorAll('div,span,i,em'));" +
         "    for(var j=0;j<tags.length;j++){" +
         "      if(textOf(tags[j])==='广告'){" +
         "        var cc=closestContainer(tags[j]);" +
-        "        if(cc && isDownloadAdContainer(cc)) cc.remove();" +
+        "        if(cc && shouldRemoveContainer(cc)) cc.remove();" +
         "      }" +
         "    }" +
+
+        "    // 3) 年终/大赏 Banner：先按文本删，再按顶部关闭按钮结构删" +
+        "    var all = Array.prototype.slice.call(root.querySelectorAll('div,section,article,li'));" +
+        "    for(var k=0;k<all.length;k++){" +
+        "      if(isAwardsBannerByText(all[k])) { all[k].remove(); }" +
+        "    }" +
+        "    tryRemoveTopBannerByCloseBtn(root);" +
         "  }" +
+
         "  function start(){" +
         "    killOnce(document);" +
         "    var mo=new MutationObserver(function(){" +
