@@ -262,7 +262,7 @@ function removeThread(threadList, filterVideo) {
     return newThreadList;
 }
 
-#新加功能
+//新加功能
 function injectInformativeTabAdKiller(html) {
     if (!html || typeof html !== "string") return html;
 
@@ -383,3 +383,4 @@ function injectInformativeTabAdKiller(html) {
     }
     return html + injected;
 }
+
