@@ -1,144 +1,101 @@
-// tieba_rm_hotpush.js
-// Remove "精选热推" block from Tieba excellent feed protobuf.
-// Verified from your capture: keyword appears inside main payload field=9 (len-delimited).
-// We remove ONLY those field=9 blocks whose bytes contain the UTF-8 keyword, keeping other fields intact.
+/**
+ * Tieba informativeTab 去“精选热推/下载类广告”卡片
+ * 思路：在 H5 页面里注入一个 MutationObserver，持续扫描并移除带“广告/立即下载/下载”特征的卡片容器
+ */
+const body = $response.body;
+if (!body) $done({});
 
-const KW = new TextEncoder().encode("精选热推"); // Uint8Array
+const INJECT_MARK = "/*__QX_TIEBA_AD_KILL__*/";
 
-function bytesIndexOf(hay, needle) {
-  if (!hay || !needle || needle.length === 0) return -1;
-  outer: for (let i = 0; i <= hay.length - needle.length; i++) {
-    for (let j = 0; j < needle.length; j++) {
-      if (hay[i + j] !== needle[j]) continue outer;
+if (body.includes(INJECT_MARK)) {
+  $done({ body });
+}
+
+const injected = `
+<script>${INJECT_MARK}
+(function () {
+  function textOf(el) {
+    try { return (el && (el.innerText || el.textContent) || "").trim(); } catch (e) { return ""; }
+  }
+
+  function closestContainer(el) {
+    if (!el) return null;
+    // 优先找更像“卡片”的容器
+    const sel = [
+      "li", "article", "section",
+      "div[class*='card']", "div[class*='item']", "div[class*='feed']"
+    ];
+    for (const s of sel) {
+      const c = el.closest && el.closest(s);
+      if (c) return c;
     }
-    return i;
+    // 兜底：向上爬 8 层
+    let p = el;
+    for (let i = 0; i < 8 && p && p.parentElement; i++) p = p.parentElement;
+    return p;
   }
-  return -1;
-}
 
-function readVarint(buf, i) {
-  let shift = 0;
-  let val = 0;
-  while (i < buf.length) {
-    const b = buf[i++];
-    val |= (b & 0x7f) << shift;
-    if ((b & 0x80) === 0) return [val, i];
-    shift += 7;
-    if (shift > 70) throw new Error("varint too long");
+  function isDownloadAdContainer(container) {
+    const t = textOf(container);
+    // 关键特征：出现“广告”且同时出现“下载/立即下载”
+    if (!t) return false;
+    const hasAd = t.includes("广告");
+    const hasDl = t.includes("立即下载") || t.includes("下载");
+    // “下载”可能误伤，因此要求同时含“广告”
+    return hasAd && hasDl;
   }
-  throw new Error("EOF varint");
-}
 
-function writeVarint(v) {
-  const out = [];
-  let val = v >>> 0; // protobuf 里大多用不到 >2^32 的长度/字段号
-  while (val >= 0x80) {
-    out.push((val & 0x7f) | 0x80);
-    val >>>= 7;
-  }
-  out.push(val);
-  return out;
-}
+  function killOnce(root) {
+    root = root || document;
+    // 1) 先按“立即下载”按钮定位（命中率高）
+    const btns = Array.from(root.querySelectorAll("a,button,div,span"))
+      .filter(el => {
+        const t = textOf(el);
+        return t === "立即下载" || t === "下载";
+      });
 
-function parseMessage(buf) {
-  let i = 0;
-  const fields = [];
-  while (i < buf.length) {
-    const [key, ni] = readVarint(buf, i);
-    i = ni;
-    const field = key >>> 3;
-    const wt = key & 0x07;
+    for (const b of btns) {
+      const c = closestContainer(b);
+      if (c && isDownloadAdContainer(c)) {
+        c.remove();
+      }
+    }
 
-    if (wt === 0) {
-      const [v, ni2] = readVarint(buf, i);
-      i = ni2;
-      fields.push({ field, wt, value: v });
-    } else if (wt === 1) {
-      if (i + 8 > buf.length) throw new Error("EOF 64bit");
-      fields.push({ field, wt, value: buf.slice(i, i + 8) });
-      i += 8;
-    } else if (wt === 2) {
-      const [len, ni2] = readVarint(buf, i);
-      i = ni2;
-      const end = i + len;
-      if (end > buf.length) throw new Error("EOF len");
-      fields.push({ field, wt, value: buf.slice(i, end) });
-      i = end;
-    } else if (wt === 5) {
-      if (i + 4 > buf.length) throw new Error("EOF 32bit");
-      fields.push({ field, wt, value: buf.slice(i, i + 4) });
-      i += 4;
-    } else {
-      // group types (3/4) not expected
-      break;
+    // 2) 再按“广告”标签兜底（有些样式没有明确按钮节点）
+    const adTags = Array.from(root.querySelectorAll("div,span,i,em"))
+      .filter(el => textOf(el) === "广告");
+
+    for (const tag of adTags) {
+      const c = closestContainer(tag);
+      if (c && isDownloadAdContainer(c)) {
+        c.remove();
+      }
     }
   }
-  return fields;
-}
 
-function encodeField(f) {
-  const key = (f.field << 3) | f.wt;
-  const out = [];
-  out.push(...writeVarint(key));
+  function start() {
+    killOnce(document);
 
-  if (f.wt === 0) {
-    out.push(...writeVarint(f.value));
-  } else if (f.wt === 1 || f.wt === 5) {
-    out.push(...Array.from(f.value));
-  } else if (f.wt === 2) {
-    out.push(...writeVarint(f.value.length));
-    out.push(...Array.from(f.value));
-  }
-  return out;
-}
+    const mo = new MutationObserver(() => {
+      // 降频：用 requestAnimationFrame 合并多次变更
+      if (start._raf) return;
+      start._raf = requestAnimationFrame(() => {
+        start._raf = 0;
+        killOnce(document);
+      });
+    });
 
-function encodeMessage(fields) {
-  const out = [];
-  for (const f of fields) out.push(...encodeField(f));
-  return new Uint8Array(out);
-}
-
-try {
-  if (!$response.bodyBytes) {
-    $done({});
-    return;
+    mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
   }
 
-  const body = new Uint8Array($response.bodyBytes);
-
-  // top-level protobuf: usually field1(status) + field2(payload)
-  const top = parseMessage(body);
-
-  // find main payload field=2 (len-delimited)
-  const pIdx = top.findIndex(x => x.field === 2 && x.wt === 2);
-  if (pIdx === -1) {
-    $done({});
-    return;
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start, { once: true });
+  } else {
+    start();
   }
+})();
+</script>
+`;
 
-  const payload = top[pIdx].value;
-  const pf = parseMessage(payload);
-
-  // remove ONLY field=9 blocks that contain the keyword bytes
-  const filtered = pf.filter(x => {
-    if (x.field === 9 && x.wt === 2) {
-      return bytesIndexOf(x.value, KW) === -1;
-    }
-    return true;
-  });
-
-  if (filtered.length === pf.length) {
-    // nothing to remove
-    $done({});
-    return;
-  }
-
-  const newPayload = encodeMessage(filtered);
-  top[pIdx].value = newPayload;
-
-  const newBody = encodeMessage(top);
-  $done({ bodyBytes: newBody });
-} catch (e) {
-  // fail-safe: do not break feed
-  $done({});
-}
+const out = body.replace(/<\/head>/i, injected + "\n</head>");
+$done({ body: out });
