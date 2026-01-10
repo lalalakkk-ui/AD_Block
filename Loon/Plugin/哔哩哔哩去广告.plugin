@@ -5,7 +5,7 @@
 #!tg-channel=https://t.me/inaisi
 #!category=奶思的模块
 #!tag=去广告, fmz200, 奶思
-
+#!icon=https://raw.githubusercontent.com/lalalakkk-ui/AD_Block/Advertisement-Block/Loon/icon/Bilibili.png
 hostname = grpc.biliapi.net, app.bilibili.com, api.bilibili.com, api.live.bilibili.com, live.bilibili.com, line3-h5-mobile-api.biligame.com
 
 [Rule]
