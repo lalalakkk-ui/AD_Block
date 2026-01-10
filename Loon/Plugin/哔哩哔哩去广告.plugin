@@ -13,6 +13,7 @@ purifyTopReplies=switch,true,tag=[评论区]过滤置顶评论广告,desc=true: 
 purifyWebpage=switch,true,tag=净化内嵌网页,desc=true: 开启\n- false: 关闭
 airborne=switch,true,tag=空降助手,desc=true: 开启\n- false: 关闭
 logLevel=select,"info","off","error","warn","debug",tag=日志等级
+
 hostname = grpc.biliapi.net, app.bilibili.com, api.bilibili.com, api.live.bilibili.com, live.bilibili.com, line3-h5-mobile-api.biligame.com
 
 [Rule]
