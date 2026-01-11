@@ -5,6 +5,7 @@ HOST,api.bilibili.com
 HOST,app.biliapi.com
 HOST,app.biliapi.net
 HOST,app.bilibili.com
+HOST,grpc.biliapi.net
 HOST,m.bilibili.com
 HOST,upos-hz-mirrorakam.akamaized.net
 HOST,www.bilibili.com
