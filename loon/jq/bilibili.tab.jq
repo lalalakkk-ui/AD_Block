@@ -1,13 +1,6 @@
 .data.tab = [
     {
         pos: 1,
-        id: 731,
-        name: "\u76F4\u64AD",
-        tab_id: "\u76F4\u64ADtab",
-        uri: "bilibili://live/home"
-    },
-    {
-        pos: 2,
         id: 477,
         name: "\u63A8\u8350",
         tab_id: "\u63A8\u8350tab",
@@ -15,7 +8,7 @@
         default_selected: 1
     },
     {
-        pos: 3,
+        pos: 2,
         id: 478,
         name: "\u70ED\u95E8",
         tab_id: "\u70ED\u95E8tab",
